@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', function() {
     var socket = io();
-    var prevClose = parseFloat(document.getElementById("prevclose").textContent);  // Inject the prevClose value from Flask using Jinja
+    var prevClose = parseFloat(document.getElementById("prevclose").textContent);
     
     // Store the last known values
     var lastSellOB = [];
