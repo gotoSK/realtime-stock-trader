@@ -110,26 +110,78 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Get the canvas context for drawing the chart
     var ctx = document.getElementById('priceChart').getContext('2d');
+
+    // Create a gradient background for the line
+    var gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(0, 200, 0, 0.3)');
+    gradient.addColorStop(1, 'rgba(0, 200, 0, 0)');
+    
     // Create a real-time line chart for LTP
     var priceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,  // X-axis labels
             datasets: [{
-                label: 'Last Traded Price (LTP)',
+                label: 'Stock Price',  // Name of the dataset
                 data: ltpData,  // Y-axis data for LTP
-                borderColor: 'rgba(75, 192, 192, 1)',  // Line color
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',  // Background color
-                borderWidth: 1,
-                fill: false,  // Don't fill under the line
-                pointRadius: 0,  // Remove the big dots from the line
-                pointHoverRadius: 0  // Disable hover effect on the points
+                borderColor: 'rgba(0, 200, 0, 1)',  // Line color (greenish)
+                backgroundColor: gradient,  // Faint background color
+                borderWidth: 2,  // Line width
+                fill: true,  // Don't fill the area under the line
+                pointRadius: function(context) {
+                    // Show a point only on the last data point
+                    return context.dataIndex === ltpData.length - 1 ? 5 : 0;
+                },
+                pointHoverRadius: 5,  // Hover effect on the last point
+                pointBackgroundColor: 'rgba(0, 200, 0, 1)',  // Color for the last point
+                pointBorderWidth: function(context) {
+                    // Make the last point thicker
+                    return context.dataIndex === ltpData.length - 1 ? 1 : 0;
+                },
+                pointBorderColor: 'rgba(0, 200, 0, 1)'  // Border color for the last point
             }]
         },
         options: {
             scales: {
+                x: {
+                    grid: {
+                        display: false,  // Hide gridlines for X-axis
+                        color: '#444'  // Color of the gridlines (optional)
+                    },
+                    ticks: {
+                        color: '#ccc'  // X-axis label color
+                    }
+                },
                 y: {
-                    beginAtZero: false  // Adjust this based on LTP values
+                    position: 'right', // Position price scale on the right side
+                    grid: {
+                        display: false,  // Hide gridlines for Y-axis
+                        color: '#444'  // Y-axis gridlines color
+                    },
+                    ticks: {
+                        color: '#ccc'  // Y-axis label color
+                    },
+                    beginAtZero: false  // Stock prices don't start from zero
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false  // Disable legend to simplify the chart
+                },
+                tooltip: {
+                    mode: 'index',  // Show all points at the same index
+                    intersect: false,  // Show the tooltip on hover regardless of exact point
+                    usePointStyle: true,  // Use point style in tooltip
+                    callbacks: {
+                        label: function(tooltipItem) {
+                            return ' NPR ' + tooltipItem.raw;  // Custom label in tooltip
+                        }
+                    }
+                }
+            },
+            elements: {
+                line: {
+                    tension: 0.4  // Smooth out the line
                 }
             }
         }
@@ -149,11 +201,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Add the new LTP value to the chart data
             if (ltpData.length == 0) {
                 ltpData.push(prevClose);
-                ltpData.push(data.ltp);
+                ltpData.push(lastLTP);
             }
-            else {
-                ltpData[ltpData.length-1] = data.ltp;
-            }
+            else ltpData[ltpData.length-1] = lastLTP;
             
             // Add label (time for the x-axis)
             if (labels.length == 0) {
@@ -171,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
             lastCheckTime = currentTime;
             labels[labels.length-1] = new Date().toLocaleTimeString();
             labels.push('');
-            ltpData.push(data.ltp);
+            ltpData.push(lastLTP);
         }
         priceChart.update();
     });
@@ -222,17 +272,18 @@ document.addEventListener('DOMContentLoaded', function() {
         var qty = parseInt(form.find('#qty').val());
         var action = form.find('input[name="action"]').val();
 
-        if (action == 'Buy' && rate > lastSellOB[0][2]) {
-            alert('Buy Limit exceeds top bid price');
-            return;
-        }
-        else if (action == 'Sell' && rate < lastBuyOB[0][2]) {
-            alert('Sell Limit falls short to top ask price');
-            return;
-        }
-
+        
         // Validation
         if (rate != 0) {
+            if (action == 'Buy' && rate > lastSellOB[0][2]) {
+                alert('Buy Limit exceeds top bid price');
+                return;
+            }
+            else if (action == 'Sell' && rate < lastBuyOB[0][2]) {
+                alert('Sell Limit falls short to top ask price');
+                return;
+            }
+
             let p1 = (prevClose*0.9).toString();
             let decimalIndex = p1.indexOf('.');
             if (decimalIndex !== -1 && p1.length - decimalIndex - 1 === 2) {
