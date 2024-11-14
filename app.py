@@ -68,7 +68,7 @@ def MKT_execute():
         placedOrders[i-1][6] = True
         socketio.emit('placed_orders', {'placedOrders': placedOrders})
 
-    if placedOrders[i-1][4] >= sellOB[0][2]:
+    if placedOrders[i-1][4] >= sellOB[0][1]:
         if placedOrders[i-1][5] == 'Buy':
             socketio.emit('order_book', {'ltp': sellOB[0][2]})
         else:
