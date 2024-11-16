@@ -10,9 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var lastLTP = "N/A";
     var lastDatabase = [];
 
-    // Initialize an empty array to store LTP values
-    var ltpData = [];
-    var labels = []; // For x-axis labels (e.g., timestamps or point numbers)
+    var ltpData = sessionStorage.getItem('ltpData') ? JSON.parse(sessionStorage.getItem('ltpData')) || [] : []; // For y-axis labels (price)
+    var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : []; // For x-axis labels (timestamps)
+    var ctx = document.getElementById('priceChart').getContext('2d'); // Get the canvas context for drawing the chart
 
     // Function to update the order book
     function updateOrderBook(sellOB, buyOB, ltp) {
@@ -107,14 +107,6 @@ document.addEventListener('DOMContentLoaded', function() {
             floorsheetTableBody.appendChild(row);
         });
     }
-
-    // Get the canvas context for drawing the chart
-    var ctx = document.getElementById('priceChart').getContext('2d');
-
-    // Create a gradient background for the line
-    var gradient = ctx.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, 'rgba(0, 200, 0, 0.3)');
-    gradient.addColorStop(1, 'rgba(0, 200, 0, 0)');
     
     // Create a real-time line chart for LTP
     var priceChart = new Chart(ctx, {
@@ -123,22 +115,38 @@ document.addEventListener('DOMContentLoaded', function() {
             labels: labels,  // X-axis labels
             datasets: [{
                 label: 'Stock Price',  // Name of the dataset
-                data: ltpData,  // Y-axis data for LTP
-                borderColor: 'rgba(0, 200, 0, 1)',  // Line color (greenish)
-                backgroundColor: gradient,  // Faint background color
+                data: ltpData,  // Y-axis data for LTP arr
+                borderColor: function() {
+                    return ltpData[ltpData.length - 1] >= ltpData[0] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                },  // Line color
+                backgroundColor: function() {
+                    // Create a gradient background for the line
+                    var gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                    if (ltpData[ltpData.length - 1] >= ltpData[0]) {
+                        // Green gradient for upward trend
+                        gradient.addColorStop(0, 'rgba(0, 200, 0, 0.3)');
+                        gradient.addColorStop(1, 'rgba(0, 200, 0, 0)');
+                    } else {
+                        // Red gradient for downward trend
+                        gradient.addColorStop(0, 'rgba(200, 0, 0, 0.3)');
+                        gradient.addColorStop(1, 'rgba(200, 0, 0, 0)');
+                    }
+                    return gradient;
+                },
                 borderWidth: 2,  // Line width
                 fill: true,  // Don't fill the area under the line
                 pointRadius: function(context) {
                     // Show a point only on the last data point
                     return context.dataIndex === ltpData.length - 1 ? 5 : 0;
                 },
-                pointHoverRadius: 5,  // Hover effect on the last point
-                pointBackgroundColor: 'rgba(0, 200, 0, 1)',  // Color for the last point
+                pointHoverRadius: 3,  // Hover effect on the last point
+                pointBackgroundColor: function() {
+                    return ltpData[ltpData.length - 1] >= ltpData[0] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                },  // Color for the last point
                 pointBorderWidth: function(context) {
                     // Make the last point thicker
                     return context.dataIndex === ltpData.length - 1 ? 1 : 0;
-                },
-                pointBorderColor: 'rgba(0, 200, 0, 1)'  // Border color for the last point
+                }
             }]
         },
         options: {
@@ -146,7 +154,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 x: {
                     grid: {
                         display: false,  // Hide gridlines for X-axis
-                        color: '#444'  // Color of the gridlines (optional)
                     },
                     ticks: {
                         color: '#ccc'  // X-axis label color
@@ -156,7 +163,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     position: 'right', // Position price scale on the right side
                     grid: {
                         display: false,  // Hide gridlines for Y-axis
-                        color: '#444'  // Y-axis gridlines color
                     },
                     ticks: {
                         color: '#ccc'  // Y-axis label color
@@ -183,6 +189,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 line: {
                     tension: 0.4  // Smooth out the line
                 }
+            },
+            hover: {
+                mode: 'index',  // Show tooltip and hover effect on closest point along x-axis
+                intersect: false  // Activate hover effect even when not intersecting with the line
             }
         }
     });
@@ -190,12 +200,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Listen for 'order_book' event from the server
     socket.on('order_book', function(data) {
         // Update last known values if new data is provided
-        if (data.sellOB) lastSellOB = data.sellOB;  // Update sellOB
-        if (data.buyOB) lastBuyOB = data.buyOB;      // Update buyOB
-        if (data.ltp) lastLTP = data.ltp;            // Update LTP
+        if (data.sellOB) lastSellOB = data.sellOB;
+        if (data.buyOB) lastBuyOB = data.buyOB;
+        if (data.ltp) lastLTP = data.ltp;
         // Update the order book with new or previous values
         updateOrderBook(data.sellOB, data.buyOB, data.ltp);
 
+        // for chart
         const currentTime = Date.now();
         if (currentTime-lastCheckTime < 60000) {
             // Add the new LTP value to the chart data
@@ -204,25 +215,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 ltpData.push(lastLTP);
             }
             else ltpData[ltpData.length-1] = lastLTP;
+            sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
             
             // Add label (time for the x-axis)
             if (labels.length == 0) {
                 labels.push('');
                 labels.push(new Date().toLocaleTimeString());
                 labels.push('');
+                sessionStorage.setItem('labels', JSON.stringify(labels));
             }
-            // Limit the number of data points to keep the chart manageable
-            // if (ltpData.length > 50) {
-                //     ltpData.shift();  // Remove the oldest data point
-                //     labels.shift();  // Remove the oldest label
-            // }
         }
         else {
             lastCheckTime = currentTime;
             labels[labels.length-1] = new Date().toLocaleTimeString();
             labels.push('');
             ltpData.push(lastLTP);
+            sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
+            sessionStorage.setItem('labels', JSON.stringify(labels));
         }
+
+        // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
+        window.addEventListener("beforeunload", function () {
+            sessionStorage.setItem('arr', JSON.stringify(arr));
+            sessionStorage.setItem('labels', JSON.stringify(labels));
+            sessionStorage.setItem('i', i);
+        });
+        
         priceChart.update();
     });
 
