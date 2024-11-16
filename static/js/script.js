@@ -1,26 +1,33 @@
 document.addEventListener('DOMContentLoaded', function() {
-    let lastCheckTime = Date.now();
-
+    
     var socket = io();
+    
     var prevClose = parseFloat(document.getElementById("prevclose").textContent);
     
     // Store the last known values
-    var lastSellOB = [];
-    var lastBuyOB = [];
-    var lastLTP = "N/A";
-    var lastDatabase = [];
-
+    var lastSellOB = sessionStorage.getItem('lastSellOB') ? JSON.parse(sessionStorage.getItem('lastSellOB')) || [] : []; 
+    var lastBuyOB = sessionStorage.getItem('lastBuyOB') ? JSON.parse(sessionStorage.getItem('lastBuyOB')) || [] : [];
+    
+    var lastLTP = sessionStorage.getItem('lastLTP') ? parseFloat(sessionStorage.getItem('lastLTP')) : null;
+    
+    var lastDatabase = sessionStorage.getItem('lastDatabase') ? JSON.parse(sessionStorage.getItem('lastDatabase')) || [] : [];
+    
+    var placedOrders = sessionStorage.getItem('placedOrders') ? JSON.parse(sessionStorage.getItem('placedOrders')) || [] : [];
+    
+    let lastCheckTime = sessionStorage.getItem('lastCheckTime') ? sessionStorage.getItem('lastCheckTime') : Date.now();
     var ltpData = sessionStorage.getItem('ltpData') ? JSON.parse(sessionStorage.getItem('ltpData')) || [] : []; // For y-axis labels (price)
     var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : []; // For x-axis labels (timestamps)
+    
     var ctx = document.getElementById('priceChart').getContext('2d'); // Get the canvas context for drawing the chart
 
-    // Function to update the order book
-    function updateOrderBook(sellOB, buyOB, ltp) {
+    var change = lastLTP != null ? (lastLTP - prevClose) / prevClose : 0.0;
+
+
+    function load_OrderBook() {
         var orderBookTableBody = document.getElementById('order-book-table-body');
         orderBookTableBody.innerHTML = '';  // Clear current table content
 
-        // Use provided sellOB or fallback to last known sellOB
-        var sellOrders = sellOB ? sellOB.slice().reverse() : lastSellOB.slice().reverse();
+        var sellOrders = lastSellOB.slice().reverse();
 
         // Insert rows for flipped 'sellOB'
         sellOrders.forEach(function(order) {
@@ -32,24 +39,20 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             orderBookTableBody.appendChild(row);
         });
-
-        // Use provided LTP or fallback to last known LTP
-        var ltpValue = ltp ? ltp : lastLTP;
         
         // Insert a single row for 'LTP'
-        var ltpRow = document.createElement('tr');
-        var ltpCell = document.createElement('td');
-        ltpCell.setAttribute('colspan', '3');  // Make it span 3 columns
-        ltpCell.textContent = 'LTP: ' + ltpValue;
-        ltpCell.style.textAlign = 'left';  // Align LTP to the left
-        ltpRow.appendChild(ltpCell);
-        orderBookTableBody.appendChild(ltpRow);
-
-        // Use provided buyOB or fallback to last known buyOB
-        var buyOrders = buyOB ? buyOB : lastBuyOB;
+        if (lastLTP) {
+            var ltpRow = document.createElement('tr');
+            var ltpCell = document.createElement('td');
+            ltpCell.setAttribute('colspan', '3');  // Make it span 3 columns
+            ltpCell.textContent = 'LTP: ' + lastLTP;
+            ltpCell.style.textAlign = 'left';  // Align LTP to the left
+            ltpRow.appendChild(ltpCell);
+            orderBookTableBody.appendChild(ltpRow);
+        }
 
         // Insert rows for 'buyOB'
-        buyOrders.forEach(function(order) {
+        lastBuyOB.forEach(function(order) {
             var row = document.createElement('tr');
             order.forEach(function(value) {
                 var cell = document.createElement('td');
@@ -58,56 +61,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             orderBookTableBody.appendChild(row);
         });
-    }
+    } load_OrderBook();
 
-    // Function to update the floorsheet
-    function updateFloorsheet(database) {
-        var floorsheetTableBody = document.getElementById('floorsheet-table-body');
-        floorsheetTableBody.innerHTML = '';  // Clear current floorsheet table content
-
-        // Use provided database or fallback to last known database
-        var floorsheetData = database ? database.slice().reverse() : lastDatabase.slice().reverse();
-
-        // Insert rows for floorsheet with updated format
-        floorsheetData.forEach(function(entry) {
-            var row = document.createElement('tr');
-
-            // Calculate amount = qty * rate
-            var amount = entry.qty * entry.rate;
-
-            // Add cells for each column
-            var idCell = document.createElement('td');
-            idCell.textContent = entry.id;
-            row.appendChild(idCell);
-
-            var conIDCell = document.createElement('td');
-            conIDCell.textContent = entry.conID;
-            row.appendChild(conIDCell);
-
-            var qtyCell = document.createElement('td');
-            qtyCell.textContent = entry.qty;
-            row.appendChild(qtyCell);
-
-            var rateCell = document.createElement('td');
-            rateCell.textContent = entry.rate;
-            row.appendChild(rateCell);
-
-            var amountCell = document.createElement('td');
-            amountCell.textContent = amount.toFixed(2);  // Keep 2 decimal places for amount
-            row.appendChild(amountCell);
-
-            var buyerNameCell = document.createElement('td');
-            buyerNameCell.textContent = entry.buyerName;
-            row.appendChild(buyerNameCell);
-
-            var sellerNameCell = document.createElement('td');
-            sellerNameCell.textContent = entry.sellerName;
-            row.appendChild(sellerNameCell);
-
-            floorsheetTableBody.appendChild(row);
-        });
-    }
-    
     // Create a real-time line chart for LTP
     var priceChart = new Chart(ctx, {
         type: 'line',
@@ -117,12 +72,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 label: 'Stock Price',  // Name of the dataset
                 data: ltpData,  // Y-axis data for LTP arr
                 borderColor: function() {
-                    return ltpData[ltpData.length - 1] >= ltpData[0] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                    return ltpData[ltpData.length - 1] >= ltpData[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
                 },  // Line color
                 backgroundColor: function() {
                     // Create a gradient background for the line
                     var gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    if (ltpData[ltpData.length - 1] >= ltpData[0]) {
+                    if (ltpData[ltpData.length - 1] >= ltpData[1]) {
                         // Green gradient for upward trend
                         gradient.addColorStop(0, 'rgba(0, 200, 0, 0.3)');
                         gradient.addColorStop(1, 'rgba(0, 200, 0, 0)');
@@ -141,7 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 pointHoverRadius: 3,  // Hover effect on the last point
                 pointBackgroundColor: function() {
-                    return ltpData[ltpData.length - 1] >= ltpData[0] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                    return ltpData[ltpData.length - 1] >= ltpData[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
                 },  // Color for the last point
                 pointBorderWidth: function(context) {
                     // Make the last point thicker
@@ -197,16 +152,54 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Listen for 'order_book' event from the server
-    socket.on('order_book', function(data) {
-        // Update last known values if new data is provided
-        if (data.sellOB) lastSellOB = data.sellOB;
-        if (data.buyOB) lastBuyOB = data.buyOB;
-        if (data.ltp) lastLTP = data.ltp;
-        // Update the order book with new or previous values
-        updateOrderBook(data.sellOB, data.buyOB, data.ltp);
+    function load_Floorsheet() {
+        var floorsheetTableBody = document.getElementById('floorsheet-table-body');
+        floorsheetTableBody.innerHTML = '';  // Clear current floorsheet table content
 
-        // for chart
+        // Use provided database or fallback to last known database
+        var floorsheetData = lastDatabase.slice().reverse();
+
+        // Insert rows for floorsheet with updated format
+        floorsheetData.forEach(function(entry) {
+            var row = document.createElement('tr');
+
+            // Calculate amount = qty * rate
+            var amount = entry.qty * entry.rate;
+
+            // Add cells for each column
+            var idCell = document.createElement('td');
+            idCell.textContent = entry.id;
+            row.appendChild(idCell);
+
+            var conIDCell = document.createElement('td');
+            conIDCell.textContent = entry.conID;
+            row.appendChild(conIDCell);
+
+            var qtyCell = document.createElement('td');
+            qtyCell.textContent = entry.qty;
+            row.appendChild(qtyCell);
+
+            var rateCell = document.createElement('td');
+            rateCell.textContent = entry.rate;
+            row.appendChild(rateCell);
+
+            var amountCell = document.createElement('td');
+            amountCell.textContent = amount.toFixed(2);  // Keep 2 decimal places for amount
+            row.appendChild(amountCell);
+
+            var buyerNameCell = document.createElement('td');
+            buyerNameCell.textContent = entry.buyerName;
+            row.appendChild(buyerNameCell);
+
+            var sellerNameCell = document.createElement('td');
+            sellerNameCell.textContent = entry.sellerName;
+            row.appendChild(sellerNameCell);
+
+            floorsheetTableBody.appendChild(row);
+        });
+    } load_Floorsheet();
+
+    function updateChart() {
         const currentTime = Date.now();
         if (currentTime-lastCheckTime < 60000) {
             // Add the new LTP value to the chart data
@@ -227,30 +220,74 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         else {
             lastCheckTime = currentTime;
+            sessionStorage.setItem('lastCheckTime', lastCheckTime);
             labels[labels.length-1] = new Date().toLocaleTimeString();
             labels.push('');
             ltpData.push(lastLTP);
             sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
             sessionStorage.setItem('labels', JSON.stringify(labels));
         }
-
-        // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
-        window.addEventListener("beforeunload", function () {
-            sessionStorage.setItem('arr', JSON.stringify(arr));
-            sessionStorage.setItem('labels', JSON.stringify(labels));
-            sessionStorage.setItem('i', i);
-        });
         
         priceChart.update();
+    }
+
+    function load_placedOrders() {
+        // Clear the current table content
+        $('#open-orders-table-body').empty();
+        $('#filled-orders-table-body').empty();
+
+        placedOrders.forEach(function(order) {
+            if (order[0] != null) {
+                var row = '<tr>' +
+                    '<td>' + order[1] + '</td>' + // Symbol
+                    '<td>' + order[2] + '</td>' + // Qty
+                    '<td>' + order[3] + '</td>' + // Rate
+                    '<td>' + order[4] + '</td>' + // Rem.
+                    '<td>' + order[5] + '</td>';  // Type (Buy/Sell)
+
+                // If Success is False, show loading circle
+                if (!order[6]) {
+                    row += '<td><div class="loading-circle"></div></td>';
+                } else {
+                    row += '<td>Yes</td>';
+                }
+
+                row += '</tr>';
+
+                // If Rem. is greater than 0, it's an open order
+                if (order[4] > 0) {
+                    $('#open-orders-table-body').append(row);
+                } else {
+                    $('#filled-orders-table-body').append(row);
+                }
+            }
+        });
+    } load_placedOrders();
+
+
+    // Listen for 'order_book' event from the server
+    socket.on('order_book', function(data) {
+        // Update last known values if new data is provided
+        if (data.sellOB) lastSellOB = data.sellOB;
+        if (data.buyOB) lastBuyOB = data.buyOB;
+        if (data.ltp) lastLTP = data.ltp;
+
+        sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
+        sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
+        sessionStorage.setItem('lastLTP', lastLTP.toString());
+
+        load_OrderBook();
+        updateChart();
     });
 
     // Listen for 'floorsheet' event from the server
     socket.on('floorsheet', function(data) {
         // Update last known database if new data is provided
         if (data.database) lastDatabase = data.database;
+        
+        sessionStorage.setItem('lastDatabase', JSON.stringify(lastDatabase));
 
-        // Update the floorsheet with new or previous values
-        updateFloorsheet(data.database);
+        load_Floorsheet();
     });
 
     // Toggle between Chart, Database and Stats
@@ -359,38 +396,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Listen for 'placed_orders' event from the server
     socket.on('placed_orders', function(data) {
-        var placedOrders = data.placedOrders;
-
-        // Clear the current table content
-        $('#open-orders-table-body').empty();
-        $('#filled-orders-table-body').empty();
-
-        placedOrders.forEach(function(order) {
-            if (order[0] != null) {
-                var row = '<tr>' +
-                    '<td>' + order[1] + '</td>' + // Symbol
-                    '<td>' + order[2] + '</td>' + // Qty
-                    '<td>' + order[3] + '</td>' + // Rate
-                    '<td>' + order[4] + '</td>' + // Rem.
-                    '<td>' + order[5] + '</td>';  // Type (Buy/Sell)
-
-                // If Success is False, show loading circle
-                if (!order[6]) {
-                    row += '<td><div class="loading-circle"></div></td>';
-                } else {
-                    row += '<td>Yes</td>';
-                }
-
-                row += '</tr>';
-
-                // If Rem. is greater than 0, it's an open order
-                if (order[4] > 0) {
-                    $('#open-orders-table-body').append(row);
-                } else {
-                    $('#filled-orders-table-body').append(row);
-                }
-            }
-        });
+        if (data.placedOrders) placedOrders = data.placedOrders;
+        sessionStorage.setItem('placedOrders', JSON.stringify(placedOrders));
+        load_placedOrders();
     });
 
     // Toggle between "Open Orders" and "Filled Orders"
@@ -405,5 +413,17 @@ document.addEventListener('DOMContentLoaded', function() {
         $('#open-orders-btn').removeClass('active');
         $('#filled-orders').show();
         $('#open-orders').hide();
+    });
+
+    // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
+    window.addEventListener("beforeunload", function () {
+        sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
+        sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
+        sessionStorage.setItem('lastLTP', lastLTP.toString());
+        sessionStorage.setItem('lastDatabase', JSON.stringify(lastDatabase));
+        sessionStorage.setItem('lastCheckTime', lastCheckTime);
+        sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
+        sessionStorage.setItem('labels', JSON.stringify(labels));
+        sessionStorage.setItem('placedOrders', JSON.stringify(placedOrders));
     });
 });
