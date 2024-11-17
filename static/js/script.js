@@ -248,16 +248,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // If Success is False, show loading circle
                 if (!order[6]) {
                     row += '<td><div class="loading-circle"></div></td>';
-                } else {
-                    row += '<td>Yes</td>';
                 }
-
-                row += '</tr>';
-
+                
                 // If Rem. is greater than 0, it's an open order
                 if (order[4] > 0) {
+                    row += '<td><a href="#">Edit</a> <a href="#">Del</a></td>';
+                    row += '</tr>';
                     $('#open-orders-table-body').append(row);
                 } else {
+                    row += '</tr>';
                     $('#filled-orders-table-body').append(row);
                 }
             }

@@ -54,25 +54,27 @@ event_place_LMT = threading.Event() # while LMT order is being placed
 lock = threading.Lock()
 skip = False
 
-def genConID(OrderNo, rem_mkt_order):
-    if rem_mkt_order == False:
-        return arr[0][1][:8] + '1' + '0' * (7 - len(str(OrderNo))) + str(OrderNo)
-    else:
+def genConID(rem_mkt_order):
+    global placedOrders
+
+    if rem_mkt_order == True:
         placedOrders.append([None])
-        return arr[0][1][:8] + '1' + '0' * (7 - len(str(Orders+1))) + str(Orders+1)
+    
+    return arr[0][1][:8] + '1' + '0' * (7 - len(str(Orders))) + str(Orders)
 
 def MKT_execute():
-    i = MKT_Orders[0]
+    global placedOrders
+    i = MKT_Orders[0] # grab order id of this order
 
+    # Order ready to be filled
     if placedOrders[i-1][6] == False:
         placedOrders[i-1][6] = True
         socketio.emit('placed_orders', {'placedOrders': placedOrders})
 
-    if placedOrders[i-1][4] >= sellOB[0][1]:
-        if placedOrders[i-1][5] == 'Buy':
-            socketio.emit('order_book', {'ltp': sellOB[0][2]})
-        else:
-            socketio.emit('order_book', {'ltp': buyOB[0][2]})
+    # When the best bid/ask qty < mkt order's qty
+    if (placedOrders[i-1][4] >= sellOB[0][1] and placedOrders[i-1][5] == 'Buy') or (placedOrders[i-1][4] >= buyOB[0][1] and placedOrders[i-1][5] == 'Sell'):
+        # Update LTP
+        socketio.emit('order_book', {'ltp': sellOB[0][2]}) if placedOrders[i-1][5] == 'Buy' else socketio.emit('order_book', {'ltp': buyOB[0][2]})
 
         # Add data to database
         with app.app_context():
@@ -81,18 +83,16 @@ def MKT_execute():
                 rand = random.choice(arr)
                 if placedOrders[i-1][5] == 'Buy':
                     if placedOrders[i-1][2] == placedOrders[i-1][4]:
-                        new_row = PriceRow(conID=genConID(i, False), buyerID=100, sellerID=rand[3], qty=sellOB[0][1], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
+                        new_row = PriceRow(conID=genConID(False), buyerID=100, sellerID=rand[3], qty=sellOB[0][1], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
                     else:
-                        new_row = PriceRow(conID=genConID(i, True), buyerID=100, sellerID=rand[3], qty=sellOB[0][1], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
-                        if placedOrders[i-1][4] - sellOB[0][1] != 0:
-                            Orders += 1
+                        Orders += 1
+                        new_row = PriceRow(conID=genConID(True), buyerID=100, sellerID=rand[3], qty=sellOB[0][1], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
                 else:
                     if placedOrders[i-1][2] == placedOrders[i-1][4]:
-                        new_row = PriceRow(conID=genConID(i, False), buyerID=rand[2], sellerID=100, qty=buyOB[0][1], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
+                        new_row = PriceRow(conID=genConID(False), buyerID=rand[2], sellerID=100, qty=buyOB[0][1], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
                     else:
-                        new_row = PriceRow(conID=genConID(i, True), buyerID=rand[2], sellerID=100, qty=buyOB[0][1], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
-                        if placedOrders[i-1][4] - sellOB[0][1] != 0:
-                            Orders += 1
+                        Orders += 1
+                        new_row = PriceRow(conID=genConID(True), buyerID=rand[2], sellerID=100, qty=buyOB[0][1], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
                 db.session.add(new_row)
                 db.session.commit()
             except IntegrityError:
@@ -102,7 +102,7 @@ def MKT_execute():
             socketio.emit('floorsheet', {'database': tranDataDict})
 
         # remaining orders to get filled
-        if placedOrders[i-1][4] == 'Buy':
+        if placedOrders[i-1][5] == 'Buy':
             placedOrders[i-1][4] -= sellOB[0][1]
         else:
             placedOrders[i-1][4] -= buyOB[0][1]
@@ -111,11 +111,13 @@ def MKT_execute():
         if placedOrders[i-1][4] == 0: # when all qty is filled
             del MKT_Orders[0]
 
+    # When the best bid/ask qty > mkt order's qty
     else:
-        bestAskBid = sellOB if placedOrders[i-1][5] == 'Buy' else buyOB
-        bestAskBid[0][0] *= int(1 - (placedOrders[i-1][2] / bestAskBid[0][1])) if bestAskBid[0][0] > 1 else bestAskBid[0][0]
-        bestAskBid[0][1] -= placedOrders[i-1][4]
-        socketio.emit('order_book', {'sellOB': sellOB, 'buyOB': buyOB, 'ltp': bestAskBid[0][2]})
+        # update the top bid/ask
+        topAskBid = sellOB if placedOrders[i-1][5] == 'Buy' else buyOB
+        topAskBid[0][0] = int(topAskBid[0][0] * (1 - (placedOrders[i-1][4] / topAskBid[0][1]))) if topAskBid[0][0] > 1 else topAskBid[0][0]
+        topAskBid[0][1] -= placedOrders[i-1][4]
+        socketio.emit('order_book', {'sellOB': topAskBid, 'ltp': topAskBid[0][2]}) if placedOrders[i-1][5] == 'Buy' else socketio.emit('order_book', {'buyOB': topAskBid, 'ltp': topAskBid[0][2]})
 
         # Add data to database
         with app.app_context():
@@ -123,18 +125,16 @@ def MKT_execute():
                 rand = random.choice(arr)
                 if placedOrders[i-1][5] == 'Buy':
                     if placedOrders[i-1][2] == placedOrders[i-1][4]:
-                        new_row = PriceRow(conID=genConID(i, False), buyerID=100, sellerID=rand[3], qty=placedOrders[i-1][4], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
+                        new_row = PriceRow(conID=genConID(False), buyerID=100, sellerID=rand[3], qty=placedOrders[i-1][4], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
                     else:
-                        new_row = PriceRow(conID=genConID(i, True), buyerID=100, sellerID=rand[3], qty=placedOrders[i-1][4], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
-                        if placedOrders[i-1][4] - sellOB[0][1] != 0:
-                            Orders += 1
+                        Orders += 1
+                        new_row = PriceRow(conID=genConID(True), buyerID=100, sellerID=rand[3], qty=placedOrders[i-1][4], rate=sellOB[0][2], buyerName='Orchid International', sellerName=rand[8], symbol=arr[0][9])
                 else:
                     if placedOrders[i-1][2] == placedOrders[i-1][4]:
-                        new_row = PriceRow(conID=genConID(i, False), buyerID=rand[2], sellerID=100, qty=placedOrders[i-1][4], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
+                        new_row = PriceRow(conID=genConID(False), buyerID=rand[2], sellerID=100, qty=placedOrders[i-1][4], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
                     else:
-                        new_row = PriceRow(conID=genConID(i, True), buyerID=rand[2], sellerID=100, qty=placedOrders[i-1][4], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
-                        if placedOrders[i-1][4] - sellOB[0][1] != 0:
-                            Orders += 1
+                        Orders += 1
+                        new_row = PriceRow(conID=genConID(True), buyerID=rand[2], sellerID=100, qty=placedOrders[i-1][4], rate=buyOB[0][2], buyerName=rand[7], sellerName='Orchid International', symbol=arr[0][9])
                 db.session.add(new_row)
                 db.session.commit()
             except IntegrityError:
@@ -345,9 +345,9 @@ def LMT_place(Rate, Qty, OrderNo, type):
         nonlocal OrderData
         rand = random.choice(arr)
         if type == 'Buy':
-            OrderData = ['', genConID(OrderNo, False), 100, rand[3], Qty, Rate, genTime(idx), 'Orchid International', rand[8], arr[0][9]]
+            OrderData = ['', genConID(False), 100, rand[3], Qty, Rate, genTime(idx), 'Orchid International', rand[8], arr[0][9]]
         else:
-            OrderData = ['', genConID(OrderNo, False), rand[2], 100, Qty, Rate, genTime(idx), rand[7], 'Orchid International', arr[0][9]]
+            OrderData = ['', genConID(False), rand[2], 100, Qty, Rate, genTime(idx), rand[7], 'Orchid International', arr[0][9]]
 
     def in_the_end():
         global subThreads, skip, placedOrders
@@ -426,7 +426,7 @@ def index():
 @app.route('/place_order', methods=['POST'])
 def place_order():
     try:
-        global Orders, placedOrders, subThreads
+        global Orders, subThreads
         
         Rate = float(request.form.get('rate'))
         Qty = int(request.form.get('qty'))
