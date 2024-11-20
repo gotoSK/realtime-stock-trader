@@ -1,11 +1,11 @@
 from utils import *
 
-def no_circuit_break(x):
+def no_circuit_break(x, prevClose):
     lower_bound = prevClose * 0.9
     upper_bound = prevClose * 1.1
     return lower_bound <= x <= upper_bound
 
-def genPrices(x, type):
+def genPrices(x, type, prices, prevClose):
     temp = [] # to store bid/ask prices within this funtion temporarily before passing to actual list
     count = 0
     if type == 'bids':
@@ -16,7 +16,7 @@ def genPrices(x, type):
                     idx -= 1
                     count += 1
                 if count != TOP_BIDSASKS_NO:
-                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1):
+                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1, prevClose):
                         temp.append(temp[count-1]-1)
                         count += 1
                 break
@@ -24,7 +24,7 @@ def genPrices(x, type):
                 temp.append(x)
                 count += 1
                 if idx == 0:
-                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1):
+                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1, prevClose):
                         temp.append(temp[count-1]-1)
                         count += 1
                 else:
@@ -34,7 +34,7 @@ def genPrices(x, type):
                         idx -= 1
                         count += 1
                     if count != TOP_BIDSASKS_NO:
-                        while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1):
+                        while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]-1, prevClose):
                             temp.append(temp[count-1]-1)
                             count += 1
                 break
@@ -48,7 +48,7 @@ def genPrices(x, type):
                     idx += 1
                     count += 1
                 if count != TOP_BIDSASKS_NO:
-                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1):
+                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1, prevClose):
                         temp.append(temp[count-1]+1)
                         count += 1
                 break
@@ -56,7 +56,7 @@ def genPrices(x, type):
                 temp.append(round(x+0.2, 1)) # making a spread of 0.2
                 count += 1
                 if idx == len(prices)-1:
-                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1):
+                    while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1, prevClose):
                         temp.append(temp[count-1]+1)
                         count += 1
                 else:
@@ -67,7 +67,7 @@ def genPrices(x, type):
                         idx += 1
                         count += 1
                     if count != TOP_BIDSASKS_NO:
-                        while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1):
+                        while count != TOP_BIDSASKS_NO and no_circuit_break(temp[count-1]+1, prevClose):
                             temp.append(temp[count-1]+1)
                             count += 1
                 break
