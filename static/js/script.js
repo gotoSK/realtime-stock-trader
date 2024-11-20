@@ -2,9 +2,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     var socket = io();
     
-    var prevClose = parseFloat(document.getElementById("prevclose").textContent);
-    
     // Store the last known values
+    var prevClose = sessionStorage.getItem('prevClose') ? parseFloat(sessionStorage.getItem('prevClose')) : null;
+    var symbol = sessionStorage.getItem('symbol') ? sessionStorage.getItem('symbol') : null;
+    var scripName = sessionStorage.getItem('scripName') ? sessionStorage.getItem('scripName') : null;
+
     var lastSellOB = sessionStorage.getItem('lastSellOB') ? JSON.parse(sessionStorage.getItem('lastSellOB')) || [] : []; 
     var lastBuyOB = sessionStorage.getItem('lastBuyOB') ? JSON.parse(sessionStorage.getItem('lastBuyOB')) || [] : [];
     
@@ -20,7 +22,44 @@ document.addEventListener('DOMContentLoaded', function() {
     
     var ctx = document.getElementById('priceChart').getContext('2d'); // Get the canvas context for drawing the chart
 
-    var change = lastLTP != null ? (lastLTP - prevClose) / prevClose : 0.0;
+
+    function load_topbar() {
+        var stockInfo = document.getElementById('stock-info');
+        stockInfo.innerHTML = '';  // Clear current content
+
+        // Insert Symbol
+        var col = document.createElement('div');
+        col.textContent = symbol;
+        stockInfo.appendChild(col);
+
+        // Insert Security's Name
+        var col = document.createElement('div');
+        col.textContent = scripName;
+        stockInfo.appendChild(col);
+
+        // Insert price (LTP)
+        col = document.createElement('div');
+        col.textContent = lastLTP;
+        stockInfo.appendChild(col);
+
+        // Insert Prev. Day's Closing Price
+        col = document.createElement('div');
+        col.textContent = 'Pre Close: ' + prevClose;
+        stockInfo.appendChild(col);
+        
+    } load_topbar();
+
+    socket.on('display_asset', function(data) {
+        prevClose = data.prevClose;
+        symbol = data.sym;
+        scripName = data.scripName;
+        
+        sessionStorage.setItem('prevClose', prevClose.toString());
+        sessionStorage.setItem('symbol', symbol);
+        sessionStorage.setItem('scripName', scripName);
+
+        load_topbar();
+    });
 
 
     function load_OrderBook() {
@@ -162,40 +201,42 @@ document.addEventListener('DOMContentLoaded', function() {
         // Insert rows for floorsheet with updated format
         floorsheetData.forEach(function(entry) {
             var row = document.createElement('tr');
+            
+            if (entry.symbol == symbol) {
+                // Calculate amount = qty * rate
+                var amount = entry.qty * entry.rate;
 
-            // Calculate amount = qty * rate
-            var amount = entry.qty * entry.rate;
+                // Add cells for each column
+                var idCell = document.createElement('td');
+                idCell.textContent = entry.id;
+                row.appendChild(idCell);
 
-            // Add cells for each column
-            var idCell = document.createElement('td');
-            idCell.textContent = entry.id;
-            row.appendChild(idCell);
+                var conIDCell = document.createElement('td');
+                conIDCell.textContent = entry.conID;
+                row.appendChild(conIDCell);
 
-            var conIDCell = document.createElement('td');
-            conIDCell.textContent = entry.conID;
-            row.appendChild(conIDCell);
+                var qtyCell = document.createElement('td');
+                qtyCell.textContent = entry.qty;
+                row.appendChild(qtyCell);
 
-            var qtyCell = document.createElement('td');
-            qtyCell.textContent = entry.qty;
-            row.appendChild(qtyCell);
+                var rateCell = document.createElement('td');
+                rateCell.textContent = entry.rate;
+                row.appendChild(rateCell);
 
-            var rateCell = document.createElement('td');
-            rateCell.textContent = entry.rate;
-            row.appendChild(rateCell);
+                var amountCell = document.createElement('td');
+                amountCell.textContent = amount.toFixed(2);  // Keep 2 decimal places for amount
+                row.appendChild(amountCell);
 
-            var amountCell = document.createElement('td');
-            amountCell.textContent = amount.toFixed(2);  // Keep 2 decimal places for amount
-            row.appendChild(amountCell);
+                var buyerNameCell = document.createElement('td');
+                buyerNameCell.textContent = entry.buyerName;
+                row.appendChild(buyerNameCell);
 
-            var buyerNameCell = document.createElement('td');
-            buyerNameCell.textContent = entry.buyerName;
-            row.appendChild(buyerNameCell);
+                var sellerNameCell = document.createElement('td');
+                sellerNameCell.textContent = entry.sellerName;
+                row.appendChild(sellerNameCell);
 
-            var sellerNameCell = document.createElement('td');
-            sellerNameCell.textContent = entry.sellerName;
-            row.appendChild(sellerNameCell);
-
-            floorsheetTableBody.appendChild(row);
+                floorsheetTableBody.appendChild(row);
+            }
         });
     } load_Floorsheet();
 
@@ -277,6 +318,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         load_OrderBook();
         updateChart();
+        load_topbar();
     });
 
     // Listen for 'floorsheet' event from the server
@@ -325,7 +367,6 @@ document.addEventListener('DOMContentLoaded', function() {
         var rate = parseFloat(form.find('#rate').val());
         var qty = parseInt(form.find('#qty').val());
         var action = form.find('input[name="action"]').val();
-
         
         // Validation
         if (rate != 0) {
@@ -416,6 +457,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
     window.addEventListener("beforeunload", function () {
+        sessionStorage.setItem('prevClose', prevClose.toString());
+        sessionStorage.setItem('symbol', symbol);
+        sessionStorage.setItem('scripName', scripName);
         sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
         sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
         sessionStorage.setItem('lastLTP', lastLTP.toString());
