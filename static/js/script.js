@@ -3,63 +3,154 @@ document.addEventListener('DOMContentLoaded', function() {
     var socket = io();
     
     // Store the last known values
-    var prevClose = sessionStorage.getItem('prevClose') ? parseFloat(sessionStorage.getItem('prevClose')) : null;
-    var symbol = sessionStorage.getItem('symbol') ? sessionStorage.getItem('symbol') : null;
-    var scripName = sessionStorage.getItem('scripName') ? sessionStorage.getItem('scripName') : null;
+    var dataMat = sessionStorage.getItem('dataMat') ? JSON.parse(sessionStorage.getItem('dataMat')) || [] : [];  // [LTP, Symbol, Name, PrevClose, [chart plots]] for each stock
+
+    var symbol = sessionStorage.getItem('symbol') ? sessionStorage.getItem('symbol') : null;  // symbol that is being displayed
 
     var lastSellOB = sessionStorage.getItem('lastSellOB') ? JSON.parse(sessionStorage.getItem('lastSellOB')) || [] : []; 
     var lastBuyOB = sessionStorage.getItem('lastBuyOB') ? JSON.parse(sessionStorage.getItem('lastBuyOB')) || [] : [];
-    
-    var lastLTP = sessionStorage.getItem('lastLTP') ? parseFloat(sessionStorage.getItem('lastLTP')) : null;
     
     var lastDatabase = sessionStorage.getItem('lastDatabase') ? JSON.parse(sessionStorage.getItem('lastDatabase')) || [] : [];
     
     var placedOrders = sessionStorage.getItem('placedOrders') ? JSON.parse(sessionStorage.getItem('placedOrders')) || [] : [];
     
     let lastCheckTime = sessionStorage.getItem('lastCheckTime') ? sessionStorage.getItem('lastCheckTime') : Date.now();
-    var ltpData = sessionStorage.getItem('ltpData') ? JSON.parse(sessionStorage.getItem('ltpData')) || [] : []; // For y-axis labels (price)
-    var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : []; // For x-axis labels (timestamps)
+    var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : [];  // For x-axis labels (timestamps)
     
-    var ctx = document.getElementById('priceChart').getContext('2d'); // Get the canvas context for drawing the chart
+    var ctx = document.getElementById('priceChart').getContext('2d');  // Get the canvas context for drawing the chart
 
 
+    function load_exploreTab() {
+        // Get the class 'explore' element
+        const exploreElement = document.querySelector('.explore');
+    
+        // Clear any existing rows to avoid duplication
+        exploreElement.innerHTML = `
+            <div class="header">
+                <span>Scrip</span>
+                <span>LTP</span>
+                <span>% Change</span>
+            </div>
+        `;
+    
+        // Track the currently selected row
+        let selectedRow = null;
+    
+        // Loop through the dataMat and add rows dynamically
+        dataMat.forEach((row, index) => {
+            const scrip = row[1];
+            const ltp = row[0];
+            const pC = row[3];
+            change = (((ltp - pC) / pC) * 100);
+            const percentChange = change > 0 ? '+' + change.toFixed(2) : change.toFixed(2);
+    
+            // Create a new row
+            const rowElement = document.createElement('div');
+            rowElement.classList.add('row');
+            rowElement.setAttribute('data-scrip', scrip); // Store the scrip as a custom attribute
+            rowElement.innerHTML = `
+                <span>${scrip}</span>
+                <span>${ltp}</span>
+                <span>${percentChange}%</span>
+            `;
+    
+            // Check if this row should be selected by default
+            if (scrip === symbol) {
+                rowElement.classList.add('selected');
+                selectedRow = rowElement; // Set as the initially selected row
+            }
+    
+            // Add an event listener for clicks
+            rowElement.addEventListener('click', () => {
+                // Remove 'selected' class from the previously selected row
+                if (selectedRow) {
+                    selectedRow.classList.remove('selected');
+                }
+    
+                // Highlight the currently selected row
+                rowElement.classList.add('selected');
+                selectedRow = rowElement; // Update the selectedRow variable
+    
+                socket.emit('scrip_selected', { scrip });
+    
+                // Update the page
+                symbol = scrip;
+                sessionStorage.setItem('symbol', symbol);
+                load_topbar();
+    
+                lastBuyOB = [];
+                lastSellOB = [];
+                sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
+                sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
+                document.getElementById('order-book-table-body').innerHTML = '';
+                
+                updateChart(symbol);
+                load_Floorsheet();
+            });
+    
+            // Append the row to the exploreElement
+            exploreElement.appendChild(rowElement);
+        });
+    } load_exploreTab();    
+
+    socket.on('stock_list', function(data) {
+        dataMat.push([data.ltp, data.sym, data.scripName, data.prevClose, []]);
+        
+        sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
+
+        load_exploreTab();
+    });
+
+    socket.on('display_asset', function(data) {
+        symbol = data.sym;
+        
+        sessionStorage.setItem('symbol', symbol);
+
+        load_topbar();
+    });
+    
     function load_topbar() {
         var stockInfo = document.getElementById('stock-info');
         stockInfo.innerHTML = '';  // Clear current content
 
-        // Insert Symbol
-        var col = document.createElement('div');
-        col.textContent = symbol;
-        stockInfo.appendChild(col);
+        for (let x of dataMat) {
+            if (symbol == x[1]) {
+                // Insert Symbol
+                var col = document.createElement('div');
+                col.textContent = symbol;
+                stockInfo.appendChild(col);
+        
+                // Insert Security's Name
+                var col = document.createElement('div');
+                col.textContent = x[2];
+                stockInfo.appendChild(col);
+        
+                // Insert price (LTP)
+                col = document.createElement('div');
+                col.textContent = x[0];
+                stockInfo.appendChild(col);
+                
+                // Insert %change
+                col = document.createElement('div');
+                change = ((x[0] - x[3]) / x[3]) * 100;
+                if (change > 0) {
+                    col.textContent = '+' + change.toFixed(2) + '%';
+                }
+                else {
+                    col.textContent = change.toFixed(2) + '%';
+                }
+                stockInfo.appendChild(col);
+        
+                // Insert Prev. Day's Closing Price
+                col = document.createElement('div');
+                col.textContent = 'Pre Close: ' + x[3];
+                stockInfo.appendChild(col);
 
-        // Insert Security's Name
-        var col = document.createElement('div');
-        col.textContent = scripName;
-        stockInfo.appendChild(col);
-
-        // Insert price (LTP)
-        col = document.createElement('div');
-        col.textContent = lastLTP;
-        stockInfo.appendChild(col);
-
-        // Insert Prev. Day's Closing Price
-        col = document.createElement('div');
-        col.textContent = 'Pre Close: ' + prevClose;
-        stockInfo.appendChild(col);
+                break;
+            }
+        }
         
     } load_topbar();
-
-    socket.on('display_asset', function(data) {
-        prevClose = data.prevClose;
-        symbol = data.sym;
-        scripName = data.scripName;
-        
-        sessionStorage.setItem('prevClose', prevClose.toString());
-        sessionStorage.setItem('symbol', symbol);
-        sessionStorage.setItem('scripName', scripName);
-
-        load_topbar();
-    });
 
 
     function load_OrderBook() {
@@ -80,14 +171,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Insert a single row for 'LTP'
-        if (lastLTP) {
-            var ltpRow = document.createElement('tr');
-            var ltpCell = document.createElement('td');
-            ltpCell.setAttribute('colspan', '3');  // Make it span 3 columns
-            ltpCell.textContent = 'LTP: ' + lastLTP;
-            ltpCell.style.textAlign = 'left';  // Align LTP to the left
-            ltpRow.appendChild(ltpCell);
-            orderBookTableBody.appendChild(ltpRow);
+        for (let x of dataMat) {
+            if (x[1] == symbol) {
+                var ltpRow = document.createElement('tr');
+                var ltpCell = document.createElement('td');
+                ltpCell.setAttribute('colspan', '3');  // Make it span 3 columns
+                ltpCell.textContent = 'LTP: ' + x[0];
+                ltpCell.style.textAlign = 'left';  // Align LTP to the left
+                ltpRow.appendChild(ltpCell);
+                orderBookTableBody.appendChild(ltpRow);
+                break;
+            }
         }
 
         // Insert rows for 'buyOB'
@@ -102,6 +196,24 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } load_OrderBook();
 
+    function ext_pricePlots(sym) {
+        if (!sym) {
+            for (let x of dataMat) {
+                if (x[1] == symbol) {
+                    return x[4];
+                }
+            }
+            return [];
+        }
+        else {
+            for (let x of dataMat) {
+                if (x[1] == sym) {
+                    return [x[0], x[3], x[4]];
+                }
+            }
+        }
+    }
+    
     // Create a real-time line chart for LTP
     var priceChart = new Chart(ctx, {
         type: 'line',
@@ -109,14 +221,16 @@ document.addEventListener('DOMContentLoaded', function() {
             labels: labels,  // X-axis labels
             datasets: [{
                 label: 'Stock Price',  // Name of the dataset
-                data: ltpData,  // Y-axis data for LTP arr
+                data: ext_pricePlots(),  // Y-axis data for LTP arr
                 borderColor: function() {
-                    return ltpData[ltpData.length - 1] >= ltpData[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                    pricePlots = ext_pricePlots();
+                    // if price is above day's open then green else red
+                    return pricePlots[pricePlots.length - 1] >= pricePlots[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
                 },  // Line color
                 backgroundColor: function() {
-                    // Create a gradient background for the line
-                    var gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    if (ltpData[ltpData.length - 1] >= ltpData[1]) {
+                    var gradient = ctx.createLinearGradient(0, 0, 0, 400);  // Create a gradient background for the line
+                    pricePlots = ext_pricePlots();
+                    if (pricePlots[pricePlots.length - 1] >= pricePlots[1]) {  // if price is above day's open then green else red
                         // Green gradient for upward trend
                         gradient.addColorStop(0, 'rgba(0, 200, 0, 0.3)');
                         gradient.addColorStop(1, 'rgba(0, 200, 0, 0)');
@@ -130,16 +244,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 borderWidth: 2,  // Line width
                 fill: true,  // Don't fill the area under the line
                 pointRadius: function(context) {
+                    pricePlots = ext_pricePlots();
                     // Show a point only on the last data point
-                    return context.dataIndex === ltpData.length - 1 ? 5 : 0;
+                    return context.dataIndex === pricePlots.length - 1 ? 5 : 0;
                 },
                 pointHoverRadius: 3,  // Hover effect on the last point
                 pointBackgroundColor: function() {
-                    return ltpData[ltpData.length - 1] >= ltpData[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
+                    pricePlots = ext_pricePlots();
+                    // if price is above day's open then green else red
+                    return pricePlots[pricePlots.length - 1] >= pricePlots[1] ? 'rgba(0, 200, 0, 1)' : 'rgba(200, 0, 0, 1)';
                 },  // Color for the last point
                 pointBorderWidth: function(context) {
+                    pricePlots = ext_pricePlots();
                     // Make the last point thicker
-                    return context.dataIndex === ltpData.length - 1 ? 1 : 0;
+                    return context.dataIndex === pricePlots.length - 1 ? 1 : 0;
                 }
             }]
         },
@@ -240,36 +358,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } load_Floorsheet();
 
-    function updateChart() {
+    function updateChart(sym) {
         const currentTime = Date.now();
+        pricePlots = ext_pricePlots(sym);  // [LTP, PrevClose, chart-plots]
+
+        // if time within 1 minu. interval
         if (currentTime-lastCheckTime < 60000) {
             // Add the new LTP value to the chart data
-            if (ltpData.length == 0) {
-                ltpData.push(prevClose);
-                ltpData.push(lastLTP);
+            if (pricePlots[2].length == 0){
+                pricePlots[2].push(pricePlots[1]);  // fill first index of chart as previous closing price
+                pricePlots[2].push(pricePlots[0]);  // fill second index of chart as the first LTP of the day
             }
-            else ltpData[ltpData.length-1] = lastLTP;
-            sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
+            else pricePlots[2][pricePlots[2].length - 1] = pricePlots[0];  // fill rest of the indices of chart as incoming LTPs
+            sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
             
             // Add label (time for the x-axis)
             if (labels.length == 0) {
-                labels.push('');
-                labels.push(new Date().toLocaleTimeString());
-                labels.push('');
+                labels.push('');  // this label is empty for the previous day's close which is the first plotted price on chart
+                labels.push(new Date().toLocaleTimeString());  // print time label
+                labels.push('');  // leave a gap from last plotted price
                 sessionStorage.setItem('labels', JSON.stringify(labels));
             }
         }
+
+        // if 1 minu. interval finished
         else {
             lastCheckTime = currentTime;
-            sessionStorage.setItem('lastCheckTime', lastCheckTime);
             labels[labels.length-1] = new Date().toLocaleTimeString();
             labels.push('');
-            ltpData.push(lastLTP);
-            sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
+            dataMat.forEach(x => {
+                x[4].push(x[0]);
+            });
+            sessionStorage.setItem('lastCheckTime', lastCheckTime);
+            sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
             sessionStorage.setItem('labels', JSON.stringify(labels));
         }
-        
-        priceChart.update();
+        if (sym == symbol)  priceChart.update();
     }
 
     function load_placedOrders() {
@@ -308,23 +432,36 @@ document.addEventListener('DOMContentLoaded', function() {
     // Listen for 'order_book' event from the server
     socket.on('order_book', function(data) {
         // Update last known values if new data is provided
-        if (data.sellOB) lastSellOB = data.sellOB;
-        if (data.buyOB) lastBuyOB = data.buyOB;
-        if (data.ltp) lastLTP = data.ltp;
-
-        sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
-        sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
-        sessionStorage.setItem('lastLTP', lastLTP.toString());
+        if (data.sym == symbol) {
+            if (data.sellOB) {
+                lastSellOB = data.sellOB;
+                sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
+            }
+            if (data.buyOB) {
+                lastBuyOB = data.buyOB;
+                sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
+            }
+        }
+        if (data.ltp) {
+            for (let x of dataMat) {
+                if (x[1] == data.sym) {
+                    x[0] = data.ltp;
+                    break;
+                }
+            }
+            sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
+        }
 
         load_OrderBook();
-        updateChart();
+        updateChart(data.sym);
         load_topbar();
+        load_exploreTab();
     });
 
     // Listen for 'floorsheet' event from the server
     socket.on('floorsheet', function(data) {
         // Update last known database if new data is provided
-        if (data.database) lastDatabase = data.database;
+        lastDatabase = data.database;
         
         sessionStorage.setItem('lastDatabase', JSON.stringify(lastDatabase));
 
@@ -379,10 +516,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            for (let x of dataMat) {
+                if (x[1] == symbol) {
+                    prevClose = x[3];
+                    break;
+                }
+            }
             let p1 = (prevClose*0.9).toString();
             let decimalIndex = p1.indexOf('.');
             if (decimalIndex !== -1 && p1.length - decimalIndex - 1 === 2) {
-                p1 = parseFloat(p1.slice(0, -1)) + 0.1;
+                p1 = parseFloat(p1.slice(0, -1)) + 0.1;prevClose
             } else {
                 p1 = parseFloat(p1.slice(0, -1));
             }
@@ -454,18 +597,27 @@ document.addEventListener('DOMContentLoaded', function() {
         $('#filled-orders').show();
         $('#open-orders').hide();
     });
+    
+    socket.on('finished_matching', function(data) {
+        for (let i in dataMat) {
+            if (dataMat[i][1] == data.sym) {
+                dataMat.splice(i, 1);
+                console.log("here");
+                break;
+            }
+        }
+        load_exploreTab();
+        console.log(dataMat);
+    });
 
     // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
     window.addEventListener("beforeunload", function () {
-        sessionStorage.setItem('prevClose', prevClose.toString());
+        sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
         sessionStorage.setItem('symbol', symbol);
-        sessionStorage.setItem('scripName', scripName);
         sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
         sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
-        sessionStorage.setItem('lastLTP', lastLTP.toString());
         sessionStorage.setItem('lastDatabase', JSON.stringify(lastDatabase));
         sessionStorage.setItem('lastCheckTime', lastCheckTime);
-        sessionStorage.setItem('ltpData', JSON.stringify(ltpData));
         sessionStorage.setItem('labels', JSON.stringify(labels));
         sessionStorage.setItem('placedOrders', JSON.stringify(placedOrders));
     });
