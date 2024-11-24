@@ -8,6 +8,7 @@ prevDay = [] # previous day data of all securities
 
 
 with open('./data/2024-08-01', 'r') as csv_file:
+    print("Extracting data ...")
     csv_reader = csv.reader(csv_file)
     next(csv_reader)
 
@@ -37,26 +38,22 @@ with open('./data/2024-08-01', 'r') as csv_file:
     # end of last itteration: append all the data of last symbol
     allSymbols.append(current)
 
-# remove all securities of low volume
+# select the only assets to work on
 def refine():
+    print("Selecting Stocks ...")
     global allSymbols
     temp = []
     for sec in allSymbols:
-        if len(sec) >= 100:
+        # if len(sec) >= 1000 and len(temp) < 20:
+        if len(sec) >= 3470:
             temp.append(sec)
     allSymbols = temp
 refine()
 
-# Write data as a CSV file
-with open('./data/all-securities.csv', 'w', newline="") as file:
-    writer = csv.writer(file)
-    writer.writerow(["S.N.", "Symbol", "TotalTransactions"])
-    for i, sec in enumerate(allSymbols):
-        writer.writerow([i+1, sec[0][9], len(sec)])
-
 
 # extracting previous day data
 with open('./data/2024-07-31', 'r') as csv_file:
+    print("Extracting previous day's data ...")
     csv_reader = csv.reader(csv_file)
     next(csv_reader)
     # attributes:                      stockId, Symbol, securityName, Rate
@@ -71,23 +68,38 @@ with open('./data/2024-07-31', 'r') as csv_file:
             prevDay.append([line[11], line[3], line[15], float(line[7])])
             currSym = line[3]
 
-# check if all symbols' data are available in previous day
-def check():
+
+# Write data as a CSV file
+with open('./data/all-securities.csv', 'w', newline="") as file:
+    print("Writing file ...")
+    writer = csv.writer(file)
+    writer.writerow(["S.N.", "Symbol", "TotalTransactions", "MaxGain/Drawdown"])
+    totalTran = 0
     match_found = False
     miss = 0
-    for i in allSymbols:
-        for j in prevDay:
-            if i[0][9] == j[1]:
+    for i, sec in enumerate(allSymbols):
+        for k in prevDay:
+            if k[1] == sec[0][9]:
+                if sec[0][5] >= sec[-1][5]:
+                    high = 0.0
+                    for j in sec:
+                        if j[5] > high: high = j[5]
+                    totalTran += len(sec)
+                    writer.writerow([i+1, sec[0][9], len(sec), round(((high-k[3]) / k[3]) * 100, 2)])
+                else:
+                    low = 99999.9
+                    for j in sec:
+                        if j[5] < low: low = j[5]
+                    totalTran += len(sec)
+                    writer.writerow([i+1, sec[0][9], len(sec), round(((low-k[3]) / k[3]) * 100, 2)])
                 match_found = True
                 break
         if match_found == False:
-            print(i[0][9], "not found.")
+            print(sec[0][9], "not found.")
             miss += 1
         else:
                 match_found = False
+    writer.writerow([totalTran])
     if miss > 0:
         print(miss, "symbols missing!")
-        return False
-    else:
-        return True
-if not check(): sys.exit()
+        sys.exit()
