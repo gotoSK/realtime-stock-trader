@@ -14,7 +14,6 @@ body {
 }
 #explore-orders{
     width: 25%;
-    border: 1px solid black
 }
 table {
     width: 100%;
@@ -69,6 +68,42 @@ h1 {
     padding: 10px;
 }
 
+/* Explore-Tab */
+.explore {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 20px 0;
+    border: 1px solid #ccc;
+}
+
+.header, .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid #ccc;
+}
+
+.header {
+    font-weight: bold;
+    background-color: #f2f2f2;
+}
+
+.row {
+    cursor: pointer;
+}
+
+.row:hover {
+    background-color: #e6f7ff;
+}
+.row.selected {
+    background-color: rgba(0, 200, 0, 0.2); /* Light green background for the selected row */
+    border: 1px solid rgba(0, 200, 0, 0.5); /* Add a border to the selected row */
+    font-weight: bold; /* Make the text bold */
+}
+
+
+/* Order placing form */
 .form-container {
     margin-top: 20px;
     display: flex;
