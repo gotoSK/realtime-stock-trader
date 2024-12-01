@@ -1,4 +1,5 @@
-from seperate_assets import *
+from seperate_assets import allSymbols, prevDay
+
 import threading
 
 
