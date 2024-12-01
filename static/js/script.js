@@ -602,12 +602,11 @@ document.addEventListener('DOMContentLoaded', function() {
         for (let i in dataMat) {
             if (dataMat[i][1] == data.sym) {
                 dataMat.splice(i, 1);
-                console.log("here");
+                sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
                 break;
             }
         }
         load_exploreTab();
-        console.log(dataMat);
     });
 
     // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
