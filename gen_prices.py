@@ -1,4 +1,4 @@
-from utils import *
+from utils import TOP_BIDSASKS_NO
 
 # def no_circuit_break(x, prevClose):
 #     lower_bound = prevClose * 0.9
