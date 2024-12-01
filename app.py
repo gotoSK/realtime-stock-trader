@@ -1,8 +1,9 @@
+from utils import *
+from gen_prices import genPrices
+
 import random
 import time
 from datetime import timedelta
-from utils import *
-from gen_prices import genPrices
 
 from flask import Flask, render_template, redirect, request
 from flask_sqlalchemy import SQLAlchemy
@@ -330,7 +331,7 @@ def orderMatch_sim(obj):
 
             obj.event_start_subThread.clear()
             obj.event_place_LMT.clear()
-    print("Finished: ", sym)
+    print(sym, "Finished matching")
     socketio.emit('finished_matching', {'sym': sym})
 
 
