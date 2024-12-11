@@ -2,7 +2,7 @@
 
 - Step 1
     - Install the Project as ``Zip File``
-    - Extract the Zip File and Designate a Location
+    - Extract the Zip File and designate a Location
 - Step 2
     - Go to the Folder than contains other Folders given as ``data``, ``databases``, ``instance`` and ``templates`` along with other ``.py files``
     - Then run the following command on ``terminal``/``bash``/``psw`` from the location as
