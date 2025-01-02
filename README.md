@@ -1,7 +1,6 @@
 # Order Matching &amp; Clearing Obligations
 
-![image](https://github.com/user-attachments/assets/7df610e3-6346-41a3-888c-90b5ffd8c4ee)
-
+![image](https://github.com/user-attachments/assets/5b8f0633-b2ba-4b50-b969-084729236323)
 
 - Step 1
     - Install the Project as ``Zip File``
