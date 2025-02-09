@@ -9,13 +9,43 @@
     <script src="https://cdn.socket.io/4.5.1/socket.io.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!-- jQuery for easy AJAX -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <script src="/static/js/script.js"></script>
+    <script src="/static/js/user.js"></script>
 
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/user.css">
 </head>
 <body>
-    <!-- Stock's live-info section -->
-    <div class="container" id="stock-info">
+    <!-- Stock's live-info & profile section -->
+    <div class="container">
+        <div class="container" id="stock-info">
+        </div>
+
+        <div class="user-area">
+            <div class="dropdown">
+
+                <button class="dropbtn">{{ session['username'] }}</button>
+                
+                <div class="dropdown-content">
+                    <p><strong>Balances:</strong></p>
+                    
+                    <script>
+                        var balanceData = {{ session['balance'] | tojson }};
+                        var collateral = {{ session['collateral'] | tojson }};
+                    </script>
+                    <ul id="balances">
+                        {% for asset, bal in session['balance'].items() %}
+                            <li>{{ asset }}: {{ bal }}</li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <p>Collateral: NPR {{ session['collateral'] }}</p>
+                    
+                    <a href="/logout">Log out</a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Main body of the page -->
