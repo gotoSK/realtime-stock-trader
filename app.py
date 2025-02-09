@@ -1,11 +1,12 @@
 from utils import *
 from gen_prices import genPrices
+from user import users
 
 import random
 import time
 from datetime import timedelta
 
-from flask import Flask, render_template, redirect, request
+from flask import Flask, render_template, redirect, request, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +19,9 @@ socketio = SocketIO(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 db = SQLAlchemy(app)
+
+app.secret_key = 'your_secret_key'  # Change this to a secure random string
+
 
 # Defining the database model
 class PriceRow(db.Model):
@@ -422,22 +426,40 @@ def LMT_place(Rate, Qty, OrderNo, type, key):
         in_the_end()
 
 
+# Login page
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        user = users.get(username)
+
+        if user and user.check_password(password):
+            session['username'] = user.username
+            session['name'] = user.name
+            session['balance'] = user.balance
+            session['collateral'] = user.collateral
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password', 'error')
+    
+    return render_template('login.html')
+
+# Logout route
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    flash('Logged out successfully.', 'info')
+    return redirect(url_for('login'))
+
 # Home page
 @app.route("/")
 def index():
+    if 'username' not in session:
+        return redirect(url_for('login'))
     return render_template("index.html")
-
-@socketio.on('connect')
-def handle_conncet():
-    event_firstEmit.set()
-
-@socketio.on('scrip_selected')
-def handle_scrip_selected(data):
-    global symbol
-
-    scrip = data.get('scrip')
-    
-    symbol = scrip
 
 # Handle the form submission (AJAX)
 @app.route('/place_order', methods=['POST'])
@@ -466,6 +488,23 @@ def place_order():
     except Exception as e:
         print(f"Error: {str(e)}")  # Debugging line for error
         return str(e), 400
+
+
+@socketio.on('deduct')
+def handle_deduction(data):
+    session['collateral'] -= data.get('amt')
+
+@socketio.on('connect')
+def handle_conncet():
+    event_firstEmit.set()
+
+@socketio.on('scrip_selected')
+def handle_scrip_selected(data):
+    global symbol
+
+    scrip = data.get('scrip')
+    
+    symbol = scrip
 
 
 # Runner & debugger
