@@ -543,9 +543,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
         }
+
         if (qty < 10) {
             alert('Quantity must be of at least 10 units.');
             return;
+        }
+        
+        // Validating with user balance and collateral
+        if (action == 'Sell') {
+            for (let stock in balanceData) {
+                if (stock == symbol && qty > balanceData[stock]) {
+                    alert(`Sell amount exceeds your balance! Your balance: ${balanceData[stock]}`);
+                    return;
+                }
+            }
+        }
+        if (action == 'Buy') {
+            if (rate*qty > collateral) {
+                alert(`Buy amount exceeds your collateral! Your collateral: NPR ${collateral}`);
+                return;
+            }
+        }
+
+        // Deducting collateral or balance
+        if (action == 'Buy') {
+            amt = qty*rate
+            socket.emit('deduct', { amt });
         }
 
         // Submit form data via AJAX
