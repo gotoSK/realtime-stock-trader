@@ -32,7 +32,7 @@
     display: none;
     position: absolute;
     background-color: white;
-    min-width: 180px;
+    min-width: 220px;
     box-shadow: 0px 5px 12px rgba(0, 0, 0, 0.15);
     border-radius: 6px;
     overflow: hidden;
@@ -80,18 +80,28 @@
     color: #007BFF;
 }
 
-/* Dropdown links */
+/* Collateral */
+#collateral-display {
+    font-size: 14px;
+    font-weight: 400; /* Normal weight */
+    color: #666; /* Slightly lighter text */
+    padding: 8px 16px;
+    margin: 0;
+}
+
+/* Log out link */
 .dropdown-content a {
+    font-size: 14px;
+    font-weight: 700; /* Bold */
     color: #333;
     padding: 12px 16px;
     text-decoration: none;
     display: flex;
     align-items: center;
-    font-size: 14px;
     transition: background 0.3s ease, color 0.3s ease;
 }
 
-/* Hover effect for links */
+/* Hover effect for log out link */
 .dropdown-content a:hover {
     background-color: #f0f0f0;
     color: #007BFF;
