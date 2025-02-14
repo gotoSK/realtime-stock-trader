@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', function() {
     var socket = io();
     
     // Store the last known values
+    var uname = sessionStorage.getItem('uname') ? sessionStorage.getItem('uname') : null;
+    let balances = sessionStorage.getItem('balances') ? JSON.parse(sessionStorage.getItem('balances')) || {} : {}; // {'asset1':xxx, 'asset2':xxx, ...}
+    let collateral = sessionStorage.getItem('collateral') ? parseFloat(sessionStorage.getItem('collateral')) : 0.0;  // symbol that is being displayed
+
     var dataMat = sessionStorage.getItem('dataMat') ? JSON.parse(sessionStorage.getItem('dataMat')) || [] : [];  // [LTP, Symbol, Name, PrevClose, [chart plots]] for each stock
 
     var symbol = sessionStorage.getItem('symbol') ? sessionStorage.getItem('symbol') : null;  // symbol that is being displayed
@@ -18,6 +22,47 @@ document.addEventListener('DOMContentLoaded', function() {
     var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : [];  // For x-axis labels (timestamps)
     
     var ctx = document.getElementById('priceChart').getContext('2d');  // Get the canvas context for drawing the chart
+
+
+    // Listen for user_info event from Flask
+    socket.on("user_info", function (data) {
+        // Update username
+        if (data.uname) {
+            uname = data.uname;
+            sessionStorage.setItem('uname', uname);
+        }
+
+        // Update user's name
+        if (data.name) {
+            document.getElementById("user-name").innerText = `${data.name}`;
+        }
+        
+        // Update collateral display
+        if (data.collateral) {
+            collateral = data.collateral;
+            sessionStorage.setItem("collateral", collateral);
+            document.getElementById("collateral-display").innerText = `Collateral: NPR ${collateral.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        
+        // Update balance list
+        if (data.balance) {
+            balances = data.balance;
+            sessionStorage.setItem('balances', JSON.stringify(balances));
+            let balancesList = document.getElementById("balances");
+            balancesList.innerHTML = ""; // Clear previous values
+    
+            for (let asset in balances) {
+                let listItem = document.createElement("li");
+                listItem.innerText = `${asset}: ${balances[asset].toLocaleString("en-US")}`;
+                balancesList.appendChild(listItem);
+            }
+        }
+    });
+
+    // Collateral deduction request from server for market orders
+    socket.on("deduct_req", function (data) {
+        socket.emit('deduct_buy', {'amt': data.amt, 'uname': data.uname});
+    });
 
 
     function load_exploreTab() {
@@ -214,7 +259,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Create a real-time line chart for LTP
+    // Create a real-time line chart
     var priceChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -268,7 +313,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         display: false,  // Hide gridlines for X-axis
                     },
                     ticks: {
-                        color: '#ccc'  // X-axis label color
+                        color: '#ccc',  // X-axis label color
+                        display: false
                     }
                 },
                 y: {
@@ -402,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
         $('#filled-orders-table-body').empty();
 
         placedOrders.forEach(function(order) {
-            if (order[0] != null) {
+            if (order && order[7] == uname) {
                 var row = '<tr>' +
                     '<td>' + order[1] + '</td>' + // Symbol
                     '<td>' + order[2] + '</td>' + // Qty
@@ -414,14 +460,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!order[6]) {
                     row += '<td><div class="loading-circle"></div></td>';
                 }
+                else {
+                    if (order[4] > 0) {
+                        row += '<td>Yes</td>';
+                    }
+                }
                 
+                row += '</tr>';
                 // If Rem. is greater than 0, it's an open order
                 if (order[4] > 0) {
-                    row += '<td><a href="#">Edit</a> <a href="#">Del</a></td>';
-                    row += '</tr>';
                     $('#open-orders-table-body').append(row);
                 } else {
-                    row += '</tr>';
                     $('#filled-orders-table-body').append(row);
                 }
             }
@@ -550,25 +599,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Validating with user balance and collateral
-        if (action == 'Sell') {
-            for (let stock in balanceData) {
-                if (stock == symbol && qty > balanceData[stock]) {
-                    alert(`Sell amount exceeds your balance! Your balance: ${balanceData[stock]}`);
+        if (action == 'Sell') { // Limit/Market sell
+            if (qty > balances[symbol]) {
+                alert(`Sell amount exceeds your balance! Your balance for ${symbol}: ${balances[symbol]}`);
+                return;
+            }
+        }
+        if (action == 'Buy') { // Limit Buy
+            if (rate != 0 && rate*qty > collateral) {
+                alert(`Buy amount exceeds your collateral! Your collateral: NPR ${collateral}`);
+                return;
+            }
+            else if (rate == 0) { // Market Buy
+                // set price as the upper circuit for conservative estimation of the market order's rate
+                let mktRate = dataMat.find(asset => asset[1] == symbol) [3] * 1.1
+                if (mktRate * qty > collateral) {
+                    alert(`Buy amount exceeds your collateral! Your collateral: NPR ${collateral}`);
                     return;
                 }
             }
         }
+
+        // Deducting collateral
         if (action == 'Buy') {
-            if (rate*qty > collateral) {
-                alert(`Buy amount exceeds your collateral! Your collateral: NPR ${collateral}`);
-                return;
+            let amt = qty * rate;
+            if (amt != 0) { // Limit order (for market orders deduction occurs when order is filled at market price)
+                collateral -= amt;
+                sessionStorage.setItem("collateral", collateral);
+                // Emit deduction event to Flask
+                socket.emit('deduct_buy', {'amt': amt});
             }
         }
-
-        // Deducting collateral or balance
-        if (action == 'Buy') {
-            amt = qty*rate
-            socket.emit('deduct', { amt });
+        // Deducting asset balance
+        if (action == 'Sell') {
+            balances[symbol] -= qty
+            sessionStorage.setItem('balances', JSON.stringify(balances));
+            socket.emit('deduct_sell', {'qty': qty});
         }
 
         // Submit form data via AJAX
@@ -634,6 +700,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
     window.addEventListener("beforeunload", function () {
+        sessionStorage.setItem('uname', uname);
+        sessionStorage.setItem('balances', JSON.stringify(balances));
+        sessionStorage.setItem("collateral", collateral);
         sessionStorage.setItem('dataMat', JSON.stringify(dataMat));
         sessionStorage.setItem('symbol', symbol);
         sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
