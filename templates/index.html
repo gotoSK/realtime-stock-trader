@@ -28,20 +28,13 @@
                 <button class="dropbtn">{{ session['username'] }}</button>
                 
                 <div class="dropdown-content">
-                    <p><strong>Balances:</strong></p>
-                    
-                    <script>
-                        var balanceData = {{ session['balance'] | tojson }};
-                        var collateral = {{ session['collateral'] | tojson }};
-                    </script>
-                    <ul id="balances">
-                        {% for asset, bal in session['balance'].items() %}
-                            <li>{{ asset }}: {{ bal }}</li>
-                        {% endfor %}
-                    </ul>
-                    
-                    <p>Collateral: NPR {{ session['collateral'] }}</p>
-                    
+                    <p id="user-name"></p>
+                    <ul id="balances"></ul>
+                    <p id="collateral-display"></p>
+                    {% if session['username'] == 'admin' %}
+                        <a href="/finish_market">Close Market</a>
+                        <a href="/settlement">Settle</a>
+                    {% endif %}
                     <a href="/logout">Log out</a>
                 </div>
             </div>
@@ -76,7 +69,7 @@
                 <button id="stats-container-btn">Stats</button>
             </div>
             <div id="chart-container" class="container-content active">
-                <canvas id="priceChart"></canvas>
+                <canvas id="priceChart" width="600" height="220"></canvas>
             </div>
             <div id="database-container" class="container-content">
                 <table>
