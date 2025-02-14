@@ -19,10 +19,12 @@ symbol = None
 datecode = None
 # specific locks for each object
 lock_orderPlacing = []
+# fast forward order matching simulation
+fast_forward = False
 
 
-# attributes:                        OrderNo, Symbol, Qty, Rate, Remaining Qty, Type, Sucess_on_placing
-# attribute col-index (placedOrders):      0,      1,   2,    3,             4,    5,                 6
+# attributes:                        OrderNo, Symbol, Qty, Rate, Remaining Qty, Type, Sucess_on_placing, username, User's Name
+# attribute col-index (placedOrders):      0,      1,   2,    3,             4,    5,                 6,        7,           8
 
 
 class AssetData():
