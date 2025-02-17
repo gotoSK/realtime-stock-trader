@@ -6,11 +6,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var uname = sessionStorage.getItem('uname') ? sessionStorage.getItem('uname') : null;
     let balances = sessionStorage.getItem('balances') ? JSON.parse(sessionStorage.getItem('balances')) || {} : {}; // {'asset1':xxx, 'asset2':xxx, ...}
     let collateral = sessionStorage.getItem('collateral') ? parseFloat(sessionStorage.getItem('collateral')) : 0.0;  // symbol that is being displayed
-
+    
     var dataMat = sessionStorage.getItem('dataMat') ? JSON.parse(sessionStorage.getItem('dataMat')) || [] : [];  // [LTP, Symbol, Name, PrevClose, [chart plots]] for each stock
-
+    
     var symbol = sessionStorage.getItem('symbol') ? sessionStorage.getItem('symbol') : null;  // symbol that is being displayed
-
+    
     var lastSellOB = sessionStorage.getItem('lastSellOB') ? JSON.parse(sessionStorage.getItem('lastSellOB')) || [] : []; 
     var lastBuyOB = sessionStorage.getItem('lastBuyOB') ? JSON.parse(sessionStorage.getItem('lastBuyOB')) || [] : [];
     
@@ -18,7 +18,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     var placedOrders = sessionStorage.getItem('placedOrders') ? JSON.parse(sessionStorage.getItem('placedOrders')) || [] : [];
     
-    let lastCheckTime = sessionStorage.getItem('lastCheckTime') ? sessionStorage.getItem('lastCheckTime') : Date.now();
+    var mktStatus = sessionStorage.getItem('mktStatus') ? sessionStorage.getItem('mktStatus') === "true" : true;  // True for open market status, False for closed market session
+    
+    var lastCheckTime = sessionStorage.getItem('lastCheckTime') ? sessionStorage.getItem('lastCheckTime') : Date.now();
     var labels = sessionStorage.getItem('labels') ? JSON.parse(sessionStorage.getItem('labels')) || [] : [];  // For x-axis labels (timestamps)
     
     var ctx = document.getElementById('priceChart').getContext('2d');  // Get the canvas context for drawing the chart
@@ -555,7 +557,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var action = form.find('input[name="action"]').val();
         
         // Validation
-        if (rate != 0) {
+        if (rate || rate == 0) {
             if (action == 'Buy' && rate > lastSellOB[0][2]) {
                 alert('Buy Limit exceeds top bid price');
                 return;
@@ -571,20 +573,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     break;
                 }
             }
-            let p1 = (prevClose*0.9).toString();
-            let decimalIndex = p1.indexOf('.');
-            if (decimalIndex !== -1 && p1.length - decimalIndex - 1 === 2) {
-                p1 = parseFloat(p1.slice(0, -1)) + 0.1;prevClose
-            } else {
-                p1 = parseFloat(p1.slice(0, -1));
-            }
-            let p2 = (prevClose*1.1).toString();
-            decimalIndex = p2.indexOf('.');
-            if (decimalIndex !== -1 && p2.length - decimalIndex - 1 === 2) {
-                p2 = parseFloat(p2.slice(0, -1));
-            }
+            let p1 = parseFloat((prevClose*0.9).toFixed(1));
+            let p2 = parseFloat((prevClose*1.1).toFixed(1));
             if (rate < p1 || rate > p2) {
-                alert(`You're breaking circuit. Rate must be within (${p1}(${prevClose*0.9}) - ${p2}(${prevClose*1.1})).`);
+                alert(`You're breaking circuit. Rate must be within (${p1} - ${p2}).`);
                 return;
             }
             if (!/^\d+(\.\d{1})?$/.test(rate)) {
@@ -606,11 +598,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         if (action == 'Buy') { // Limit Buy
-            if (rate != 0 && rate*qty > collateral) {
+            if (rate && rate*qty > collateral) {
                 alert(`Buy amount exceeds your collateral! Your collateral: NPR ${collateral}`);
                 return;
             }
-            else if (rate == 0) { // Market Buy
+            else if (!rate) { // Market Buy
                 // set price as the upper circuit for conservative estimation of the market order's rate
                 let mktRate = dataMat.find(asset => asset[1] == symbol) [3] * 1.1
                 if (mktRate * qty > collateral) {
@@ -622,12 +614,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Deducting collateral
         if (action == 'Buy') {
-            let amt = qty * rate;
-            if (amt != 0) { // Limit order (for market orders deduction occurs when order is filled at market price)
-                collateral -= amt;
+            if (rate) { // Limit order (for market orders deduction occurs when order is filled at market price)
+                collateral -= qty * rate;
                 sessionStorage.setItem("collateral", collateral);
                 // Emit deduction event to Flask
-                socket.emit('deduct_buy', {'amt': amt});
+                socket.emit('deduct_buy', {'amt': qty*rate});
             }
         }
         // Deducting asset balance
@@ -636,7 +627,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sessionStorage.setItem('balances', JSON.stringify(balances));
             socket.emit('deduct_sell', {'qty': qty});
         }
-
+        
         // Submit form data via AJAX
         $.ajax({
             url: '/place_order',
@@ -698,6 +689,59 @@ document.addEventListener('DOMContentLoaded', function() {
         load_exploreTab();
     });
 
+
+    if (document.getElementById("close-market-btn")) {
+        document.getElementById("close-market-btn").addEventListener("click", function(event) {
+            event.preventDefault();  // Prevent the default action
+        
+            let closeMarketBtn = event.target;
+            closeMarketBtn.style.pointerEvents = "none";  // Disable clicking
+            closeMarketBtn.style.opacity = "0.5";  // Grey it out to indicate it's disabled
+            closeMarketBtn.innerText = "Closing Market...";  // Update text
+        
+            fetch("/close_market", { 
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: "Market is closing" })
+            }).then(response => response.json())
+              .then(data => {
+                  console.log("Server Response:", data);
+              })
+              .catch(error => {
+                  console.error("Error:", error);
+                  closeMarketBtn.style.pointerEvents = "auto";  // Re-enable if error occurs
+                  closeMarketBtn.style.opacity = "1";  
+                  closeMarketBtn.innerText = "Close Market";  // Reset text
+              });
+        });       
+    }
+
+    function wrapUp() {
+        if (!mktStatus) {
+            document.getElementById('order-book').classList.add('blurred');
+            document.getElementById('mid-sec').classList.add('blurred');
+            document.querySelector('.form-container').classList.add('blurred');
+        }
+    } wrapUp();
+
+    // Listen for the 'wrapping_up' event from the server
+    socket.on('wrap_up', function() {
+        mktStatus = false
+        sessionStorage.setItem('mktStatus', mktStatus);
+        wrapUp();
+    });
+
+    // Listen when market is finally closed
+    socket.on('mkt_closed', function() {
+        let closeMarketBtn = document.getElementById("close-market-btn");
+        if (closeMarketBtn) {
+            closeMarketBtn.style.pointerEvents = "none";  // Disable clicking
+            closeMarketBtn.style.opacity = "0.5";
+            closeMarketBtn.innerText = "Market Closed";
+        }
+    });
+
+
     // ensure the chart values are saved before the page is unloaded (for data integrity &/or backup for unexpected interruptions)
     window.addEventListener("beforeunload", function () {
         sessionStorage.setItem('uname', uname);
@@ -708,8 +752,9 @@ document.addEventListener('DOMContentLoaded', function() {
         sessionStorage.setItem('lastSellOB', JSON.stringify(lastSellOB));
         sessionStorage.setItem('lastBuyOB', JSON.stringify(lastBuyOB));
         sessionStorage.setItem('lastDatabase', JSON.stringify(lastDatabase));
+        sessionStorage.setItem('placedOrders', JSON.stringify(placedOrders));
+        sessionStorage.setItem('mktStatus', mktStatus);
         sessionStorage.setItem('lastCheckTime', lastCheckTime);
         sessionStorage.setItem('labels', JSON.stringify(labels));
-        sessionStorage.setItem('placedOrders', JSON.stringify(placedOrders));
     });
 });
