@@ -1,6 +1,6 @@
 from utils import *
 from gen_prices import genPrices
-from user import users
+from user import users, get_user
 from market_making import maker
 from order_del import del_orders
 
@@ -413,6 +413,16 @@ def orderMatch_sim(obj):
         socketio.emit('mkt_closed')
         global finished
         finished = True
+
+        # add balance and collateral
+        with app.app_context():
+            rows = PriceRow.query.all()  # Fetch all rows
+            for row in rows:
+                if (row.conID[8:9] == '1'):
+                    if int(row.buyerID) >= 100:
+                        users[get_user(row.buyerID)].balance[row.symbol] += float(row.qty)
+                    if int(row.sellerID) >= 100:
+                        users[get_user(row.sellerID)].collateral += float(row.qty) * float(row.rate)
 
 
 def LMT_place(Rate, Qty, OrderNo, type, key):
