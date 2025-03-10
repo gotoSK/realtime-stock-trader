@@ -16,6 +16,11 @@ class User:
     def check_password(self, password):
         return self.password == password
 
+def get_user(uid):
+    for user in users:
+        if users[user].uid == uid:
+            return user
+
 
 # Simulating a database of users
 users = {
